@@ -1,17 +1,17 @@
 // based on a example by Joël Gähwiler
 // https://github.com/256dpi/arduino-mqtt
 #include <Arduino.h>
+#include "EEPROM.h"
 #include <ArduinoJson.h>
 #include <WiFiClientSecure.h>
 #include <MQTT.h>
 #include <Adafruit_ADS1015.h>
 #include <Adafruit_MLX90614.h>
 
+
 #define MQTT_MAX_PACKET_SIZE 512
 #define ANALOG_PIN_0 36
 int currentSense = 0;
-
-
 
 Adafruit_ADS1115 ads0(0x48); // address 0b1001000
 Adafruit_ADS1115 ads1(0x49); // address 0b1001001
@@ -21,6 +21,8 @@ Adafruit_MLX90614 mlx = Adafruit_MLX90614(); // address 5A
 const char ssid[] = SSID_NAME;
 const char pass[] = SSID_PASWORD;
 
+int addr = 0;
+#define EEPROM_SIZE 4 * 11
 
 WiFiClientSecure net;
 MQTTClient client;
@@ -33,13 +35,14 @@ int buttonPushCounter = 0;   // counter for the number of button presses
 int buttonState = 0;         // current state of the button
 int lastButtonState = 0;     // previous state of the button
 
-void connect() {
+void connect()
+{
     Serial.print("checking wifi...");
     while (WiFi.status() != WL_CONNECTED) {
 	Serial.print(".");
 	delay(1000);
     }
-
+    
     Serial.print("\n\rconnecting...");
     while (!client.connect("mokkamaster", "try", "try")) {
 	Serial.print(".");
@@ -56,11 +59,23 @@ void messageReceived(String &topic, String &payload) {
     // client.unsubscribe("coffeMaker1");
 }
 
-void setup() {
-
-    pinMode(buttonPin, INPUT);
-    
+void setup()
+{
     Serial.begin(115200);
+    pinMode(buttonPin, INPUT);
+    unsigned int alpha = 0;
+    Serial.println (sizeof(alpha));
+    
+    if (!EEPROM.begin(EEPROM_SIZE))
+    {
+	Serial.println("failed to initialise EEPROM"); delay(1000000);
+    }
+     Serial.println(" bytes read from Flash . Values are:");
+    for (int i = 0; i < EEPROM_SIZE; i++)
+    {
+    Serial.print(byte(EEPROM.read(i))); Serial.print(" ");
+    }
+    
     ads0.begin();
     ads1.begin();
     ads2.begin();
@@ -75,7 +90,9 @@ void setup() {
     connect();
 }
 
+
 int getCoffeLevel(unsigned int *sensors, int arrayLength){
+    
     for (uint8_t i = 0; i != 12 ; ++i ){
 	Serial.printf("sensor %1d has value %5d\r\n", i, sensors[i]);
 	//Serial.println (sensors[i]);
@@ -110,21 +127,74 @@ int getSensorData(unsigned int *sensors, int arrayLength){
 }
 
 
+
 void config_mode(){
+    //  TODO ==> get some eeprom and stor values permanently, this have to do for now.
     int serialByte = 0;
-    Serial.println("This is for cofiguring you brand new coffee machine iot sensor.");
+    Serial.println("This is for configuring you brand new coffee machine iot sensor.");
     Serial.println("Please place a empty coffe container on the hotplate and press");
-    Serial.println("enter.");
-    serialByte =  Serial.read();
-    Serial.print("yay");
-    unsigned long lightSensorNormalize[11];
-    unsigned int SensorArray[11];
+    Serial.println("button.");
+    sleep(1000);
+    while(digitalRead(buttonPin) == HIGH)
+    {
+	sleep(100);
+    }
+    unsigned int sensorsWhenLit[11];
+    getSensorData(sensorsWhenLit, 12);
+    Serial.println("Now fill the container with coffe and press the button again");
+    while(digitalRead(buttonPin) == HIGH)
+    {
+	sleep(100);
+    }
+    unsigned int sensorsWhenCoffe[11];
+    getSensorData(sensorsWhenCoffe, 12);
+
+    unsigned int sensorThresholdValues[11];
+    for(int i = 0; i != 12; ++i){
+	// dLow + dHigh / 2
+	sensorThresholdValues[i] = (sensorsWhenLit[i] + sensorsWhenCoffe[i]) / 2 ;
+	Serial.println(sensorThresholdValues[i]);
+    }
+    
+
+
+
+// while(!Serial.available() > 0 ){
+    // 	serialByte = Serial.read();
+    // }
+    // Serial.print("yay");
+    // unsigned long lightSensorNormalize[11];
+    // unsigned int SensorArray[11];
 
     
-    for (uint8_t i=0; i <= 10; ++i) {
-	//getSensorData(SensorArray, 12);
-	lightSensorNormalize[i] += SensorArray[i];
-	Serial.println(lightSensorNormalize[i]);
+    // for (uint8_t i=0; i <= 10; ++i) {
+    // 	//getSensorData(SensorArray, 12);
+    // 	lightSensorNormalize[i] += SensorArray[i];
+    // 	Serial.println(lightSensorNormalize[i]);
+    // }
+
+    int val = byte(random(10020));
+    // write the value to the appropriate byte of the EEPROM.
+    // these values will remain there when the board is
+    // turned off.
+    EEPROM.write(addr, val);
+    Serial.print(val); Serial.print(" ");
+    // advance to the next address.  there are 512 bytes in
+    // the EEPROM, so go back to 0 when we hit 512.
+    // save all changes to the flash.
+    addr = addr + 1;
+    if (addr == EEPROM_SIZE)
+    {
+	Serial.println();
+	addr = 0;
+	EEPROM.commit();
+	Serial.print(EEPROM_SIZE);
+	Serial.println(" bytes written on Flash . Values are:");
+	for (int i = 0; i < EEPROM_SIZE; i++)
+	{
+	    Serial.print(byte(EEPROM.read(i))); Serial.print(" ");
+	}
+	Serial.println(); Serial.println("----------------------------------");
     }
    
 }
@@ -134,7 +204,6 @@ void config_mode(){
 StaticJsonBuffer<256> jb;
 JsonObject &obj = jb.createObject();
 char output[128];
-
 
 void loop() {
 
