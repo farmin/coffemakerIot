@@ -1,9 +1,10 @@
 // Simple Demonstration of a coffe level and temperature sensor. Sends
 // mqtt data to broker via Wifi.
-//
-//
+
 // based on a example by Joël Gähwiler
 // https://github.com/256dpi/arduino-mqtt
+
+//bugs: See README.md , Wifi droputs, i2c bus error.
 
 #include <Arduino.h>
 #include "EEPROM.h"
@@ -37,10 +38,22 @@ char output[128];
 // Defines Button and led pins
 const int buttonPin = 23;
 const int buttonDrivePin = 12;
-const int ledPin = 13;
+//const int ledPin = 13;
 
+// variables for intterupts
+volatile int interruptCounter;
+int timeSincePowerSwitchToggle;
+
+hw_timer_t * timer = NULL;
+portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
 
 // Includes all data from the sensor stick
+enum states{
+    idle,
+    filling,
+    hotplate,
+    cooling
+};
 struct SensorLevelArray{
     unsigned int fillLevel = 0;
     double tempObjectC = 0;
@@ -49,6 +62,8 @@ struct SensorLevelArray{
     unsigned int sensor[thresholdNum];
     unsigned int sensorThresholdValues[thresholdNum];
     unsigned int currentSense = 0;
+    int powerTimer = 0;
+    states machineState;
 };
 SensorLevelArray fillArray;
 
@@ -56,11 +71,10 @@ SensorLevelArray fillArray;
 // store reference values.
 #define EEPROM_SIZE fillArray.thresholdNum * sizeof(unsigned int) // <- fix constant
 // pin for current reading with ADC conversion.
-#define ANALOG_PIN_0 36 
-
+#define ANALOG_PIN_0 35 
 
 // Used for debugging.
-#define DEBUG 
+// #define DEBUG 
 #ifdef DEBUG
     #define DEBUG_PRINT(x)      Serial.print (x)
     #define DEBUG_PRINTln(x)    Serial.println (x)
@@ -69,10 +83,20 @@ SensorLevelArray fillArray;
     #define DEBUG_PRINTln(x)
 #endif
 
+void IRAM_ATTR powerUsageTimer() {
+  portENTER_CRITICAL_ISR(&timerMux);
+  interruptCounter++;
+  portEXIT_CRITICAL_ISR(&timerMux);
+
+}
+
+
+
 // Checks if we have a valid connection for Wifi and
 // mqtt broker.
 void connect()
 {
+    #define DEBUG
     // Checks if we got a wifi connection,
     // reboots system if we fails 15 times.
     uint8_t i = 0;
@@ -87,6 +111,8 @@ void connect()
 	}
     }
 
+
+    
     // Connects to mqtt broker, hangs if none is
     // found.
     DEBUG_PRINT("\n\rconnecting...");
@@ -96,6 +122,7 @@ void connect()
     }
     DEBUG_PRINTln("\n\rconnected!");
     client.subscribe("coffeMaker1");
+    #undef DEBUG
 }
 
 
@@ -112,13 +139,18 @@ void setup()
     pinMode(buttonPin, INPUT);
     pinMode(buttonDrivePin, OUTPUT);
     digitalWrite(buttonDrivePin, HIGH);
+
+    //start timer
+    timer = timerBegin(0, 80, true);
+    timerAttachInterrupt(timer, &powerUsageTimer, true);
+    timerAlarmWrite(timer, 1000000, true); // every 1 second
+    timerAlarmEnable(timer);
     
     if (!EEPROM.begin(EEPROM_SIZE))
     {
 	Serial.println("failed to initialise EEPROM");
 	delay(1000000);
     }
-    Serial.println(" bytes read from Flash . Values are:");
     //    for (int i = 0; i < EEPROM_SIZE; ++i)
     for (int i = 0; i < fillArray.thresholdNum ; i++)
     {
@@ -143,17 +175,9 @@ void setup()
     connect();
 }
 
-int getCoffeLevel(SensorLevelArray *sensorArray ){
-    for (uint8_t i = 0; i < sensorArray->thresholdNum ; i++ ){
-	Serial.printf("sensor %1d has value %5d\r\n", i, sensorArray->sensor[i]);
-	//Serial.println (sensors[i]);
-    }
-}
-
 // Loops trough i2c adc, and updates values
 // in struct sensorArray
 int getSensorData(SensorLevelArray *sensorArray){
-   
     for (uint8_t i = 0; i != sensorArray->thresholdNum ; i++ ){
 	if (i >= 0 && i <= 3){
 	    sensorArray->sensor[i] = ads0.readADC_SingleEnded(i);
@@ -211,6 +235,15 @@ void configMode(SensorLevelArray *sensorArray){
 // main program loop
 void loop() {
 
+    if(interruptCounter > 0) {
+    	portENTER_CRITICAL(&timerMux);
+    	interruptCounter--;
+    	portEXIT_CRITICAL(&timerMux);
+    	timeSincePowerSwitchToggle++;
+    	DEBUG_PRINT("interrupt occured ");
+    	DEBUG_PRINTln(timeSincePowerSwitchToggle);
+    }
+    
     delay(200);
     if(digitalRead(buttonPin) == HIGH){
 	configMode(&fillArray);
@@ -224,6 +257,7 @@ void loop() {
     delay(1000);  // <- should fix some issues with WiFi stability
     if (!client.connected()){
 	connect();
+	DEBUG_PRINT(":");
     }
     //
     //Only runs when millis overflows.
@@ -236,10 +270,18 @@ void loop() {
 	}
 	// Checks if coffemaker draws current
 	fillArray.currentSense = analogRead(ANALOG_PIN_0); // this needs a filter or something
+	if(fillArray.currentSense > 2000){ //half adc max valeu
+	    fillArray.machineState = idle;
+	}
+	// need a better filter for better resolution
+	// no fillarray.machineState == hotplate
+	else{
+	    fillArray.machineState = idle;
+	}
 	// DEBUG_PRINTln(currentSense);
-
+	fillArray.currentSense = analogRead(ANALOG_PIN_0); // this needs a filter or something
 	getSensorData(&fillArray);
-	getCoffeLevel(&fillArray);
+	//getCoffeLevel(&fillArray);
 	fillArray.tempObjectC =  mlx.readObjectTempC();
 	fillArray.tempAmbientC = mlx.readAmbientTempC();
 	//
@@ -251,12 +293,13 @@ void loop() {
 	    i++;
 	}
 	fillArray.fillLevel = coffeLevel;
-
+	fillArray.powerTimer= timeSincePowerSwitchToggle;
 	//Updates Jsonbuffer with current values
 	//and sends mqtt message
+	obj["powerTimer"] = fillArray.powerTimer;
 	obj["currentSense"] = fillArray.currentSense;
 	obj["CoffeLevel"] = fillArray.fillLevel;
-	obj["PerculatorOnTimer"].set(42);
+	obj["machineState"] = fillArray.machineState;
 	obj["coffeTemp"].set(fillArray.tempObjectC);
 	obj["ambientTemp"].set(fillArray.tempAmbientC);
 	obj.printTo(output);

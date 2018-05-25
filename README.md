@@ -1,80 +1,57 @@
 # mokkamaster-autoff-iot
 
-One Paragraph of project description goes here
+Simple project to demonstrate howto use Wifi and mqtt on a esp32 using the Arduino
+framework. The project includes a custom sensor board that comunicates to host via
+i2c. The sensor is ment to provide useful feedback from a MokkaMaster or similar type
+of coffe machine.
 
-## Getting Started
+## Installing
 
-These instructions will get you a copy of the project up and running on your local machine for development and testing purposes. See deployment for notes on how to deploy the project on a live system.
+This project uses [Platformio](https://platformio.org/) as build platform. It installs from
+terminal by typing in the following commands:
+```
+pip install platformio
+cd ../coffemakerIot
+platformio run
+platformio run -t upload
 
+```
 ### Prerequisites
 
-What things you need to install the software and how to install them
+You probably need pip to install platfomrio. you also need to add yourself to the dialout 
+group.
 
 ```
-Give examples
+python pip
+sudo adduser $USER dialout
 ```
 
-### Installing
+## Known bugs
 
-A step by step series of examples that tell you have to get a development env running
+I2c Bus dropouts, could be hw fault.
+Wifi dropouts
 
-Say what the step will be
+# Investigate this
+[E][ssl_client.cpp:32] handle_error(): UNKNOWN ERROR CODE (004E)
+[E][ssl_client.cpp:34] handle_error(): MbedTLS message code: -78
+[E][ssl_client.cpp:84] start_ssl_client(): Connect to Server failed!
+[E][WiFiClientSecure.cpp:108] connect(): lwip_connect_r: 113
+[E][ssl_client.cpp:84] start_ssl_client(): Connect to Server failed!
+[E][WiFiClientSecure.cpp:108] connect(): lwip_connect_r: 113
+[E][ssl_client.cpp:84] start_ssl_client(): Connect to Server failed!
+[E][WiFiClientSecure.cpp:108] connect(): lwip_connect_r: 113
 
-```
-Give the example
-```
-
-And repeat
-
-```
-until finished
-```
-
-End with an example of getting some data out of the system or using it for a little demo
-
-## Running the tests
-
-Explain how to run the automated tests for this system
-
-### Break down into end to end tests
-
-Explain what these tests test and why
-
-```
-Give an example
-```
-
-### And coding style tests
-
-Explain what these tests test and why
-
-```
-Give an example
-```
-
-## Deployment
-
-Add additional notes about how to deploy this on a live system
 
 ## Built With
 
-* [Dropwizard](http://www.dropwizard.io/1.0.2/docs/) - The web framework used
-* [Maven](https://maven.apache.org/) - Dependency Management
-* [ROME](https://rometools.github.io/rome/) - Used to generate RSS Feeds
-
-## Contributing
-
-Please read [CONTRIBUTING.md](https://gist.github.com/PurpleBooth/b24679402957c63ec426) for details on our code of conduct, and the process for submitting pull requests to us.
-
-## Versioning
-
-We use [SemVer](http://semver.org/) for versioning. For the versions available, see the [tags on this repository](https://github.com/your/project/tags). 
+* [Arduino](https://www.arduino.cc/) - Arduino enviroment
+* [ArduinoJson](https://arduinojson.org/) - Json library
+* [arduino-mqtt](https://github.com/256dpi/arduino-mqtt) - Mqtt framework
+* [Adafruit-sensors](https://www.adafruit.com/) - libraries for ADS1X15 and MLX90614 sensors
 
 ## Authors
 
-* **Billie Thompson** - *Initial work* - [PurpleBooth](https://github.com/PurpleBooth)
-
-See also the list of [contributors](https://github.com/your/project/contributors) who participated in this project.
+* **Armin Bårdseth** - *Initial work*
 
 ## License
 
